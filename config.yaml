@@ -1,0 +1,20 @@
+watchlist:
+  - code: "005930"
+    name: "삼성전자"
+  - code: "000660"
+    name: "SK하이닉스"
+  - code: "005380"
+    name: "현대차"
+  - code: "005935"
+    name: "삼성전자우"
+  - code: "402340"
+    name: "SK스퀘어"
+  - code: "028260"
+    name: "삼성물산"
+  - code: "006800"
+    name: "미래에셋증권"
+
+thresholds:
+  price_change_pct: 5.0      # 등락률 기준 (%)
+  volume_multiplier: 3.0     # 거래량 기준 (평균 대비 배수)
+  volume_lookback_days: 5    # 거래량 평균 계산 기간
