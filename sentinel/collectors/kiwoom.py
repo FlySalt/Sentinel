@@ -75,12 +75,13 @@ def get_stock_data(token: str, ticker: str, name: str, lookback_days: int = 5) -
 
         today_row = rows[0]
         price     = int(_parse_float(today_row.get("cur_prc", "0")))
-        pred_pre  = _parse_float(today_row.get("pred_pre", "0"))  # +/- 전일대비 금액
         volume    = int(_parse_float(today_row.get("trde_qty", "0")))
 
-        # 등락률 = 전일대비 / 전일종가 × 100
-        prev_close = price - pred_pre
-        change_pct = (pred_pre / prev_close * 100) if prev_close != 0 else 0.0
+        # 등락률 = (오늘 종가 - 전일 종가) / 전일 종가 × 100
+        # pred_pre 필드 대신 rows[1]의 cur_prc를 전일 종가로 직접 사용 (더 정확)
+        prev_row   = rows[1] if len(rows) > 1 else None
+        prev_close = int(_parse_float(prev_row.get("cur_prc", "0"))) if prev_row else 0
+        change_pct = ((price - prev_close) / prev_close * 100) if prev_close != 0 else 0.0
 
         past_vols  = [int(_parse_float(r.get("trde_qty", "0"))) for r in rows[1:]]
         avg_vol    = sum(past_vols) / len(past_vols) if past_vols else 1
