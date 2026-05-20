@@ -14,6 +14,9 @@
 
 import requests
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+KST = ZoneInfo("Asia/Seoul")
 
 BASE_URL = "https://api.kiwoom.com"
 
@@ -50,7 +53,7 @@ def _fetch_chart(token: str, ticker: str, rows: int = 10) -> list:
 
     qry_term_tp="1" → 일봉 (미지정 시 주봉으로 반환되는 문제 있음)
     """
-    today = datetime.now().strftime("%Y%m%d")
+    today = datetime.now(KST).strftime("%Y%m%d")
     resp = requests.post(
         f"{BASE_URL}/api/dostk/chart",
         headers={

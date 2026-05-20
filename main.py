@@ -13,6 +13,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # Windows 콘솔 UTF-8 출력 강제
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -37,7 +38,8 @@ MARKET_CLOSE = (15, 30)
 
 
 def is_market_open() -> bool:
-    now = datetime.now()
+    # Windows에서 TZ 환경변수가 무시되므로 zoneinfo로 KST 명시
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
     # 주말 제외
     if now.weekday() >= 5:
         return False
