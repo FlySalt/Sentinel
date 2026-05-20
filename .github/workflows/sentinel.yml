@@ -33,6 +33,10 @@ on:
           - daily-briefing
           - dart-disclosure
 
+# Node.js 24 미리 적용 (2026-06-02 강제 전환 대비)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 # 같은 스케줄이 겹쳐 실행되지 않도록 제한
 concurrency:
   group: sentinel-${{ github.event.schedule || inputs.job }}
