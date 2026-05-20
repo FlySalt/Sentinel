@@ -1,0 +1,160 @@
+# ══════════════════════════════════════════════════════════════
+#  Sentinel 자동화 스케줄러
+#  KST(UTC+9) 기준 일정을 UTC로 변환하여 등록
+# ══════════════════════════════════════════════════════════════
+
+name: Sentinel 감시 스케줄러
+
+on:
+  schedule:
+    # ── 특이점 감시: 장중 30분마다 (09:00~15:30 KST) ────────
+    # 09:00 KST = 00:00 UTC  /  15:30 KST = 06:30 UTC
+    - cron: '*/30 0-6 * * 1-5'
+
+    # ── 예측 브리핑: 매일 06:00 KST (평일) ──────────────────
+    # 06:00 KST = 전날 21:00 UTC
+    # 월~금 KST → 일~목 UTC (0=일, 4=목)
+    - cron: '0 21 * * 0-4'
+
+    # ── DART 공시: 09:00~18:00 KST 매시간 정각 (평일) ───────
+    # 09:00 KST = 00:00 UTC  /  18:00 KST = 09:00 UTC
+    - cron: '0 0-9 * * 1-5'
+
+  # 수동 실행 — 실행할 Job을 선택 가능
+  workflow_dispatch:
+    inputs:
+      job:
+        description: '실행할 작업'
+        required: true
+        default: 'anomaly-watch'
+        type: choice
+        options:
+          - anomaly-watch
+          - daily-briefing
+          - dart-disclosure
+
+# 같은 스케줄이 겹쳐 실행되지 않도록 제한
+concurrency:
+  group: sentinel-${{ github.event.schedule || inputs.job }}
+  cancel-in-progress: false
+
+# ──────────────────────────────────────────────────────────────
+#  JOB 1 ▸ 특이점 감시  (3주차 ✅)
+# ──────────────────────────────────────────────────────────────
+jobs:
+  anomaly-watch:
+    name: 📡 특이점 감시
+    if: |
+      github.event.schedule == '*/30 0-6 * * 1-5' ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'anomaly-watch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 특이점 감시 실행
+        env:
+          TZ: Asia/Seoul   # datetime.now() → KST (장중 체크에 필수)
+          KIWOOM_APP_KEY:      ${{ secrets.KIWOOM_APP_KEY }}
+          KIWOOM_APP_SECRET:   ${{ secrets.KIWOOM_APP_SECRET }}
+          GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+        # 수동 실행 시 --force 로 장시간 체크 우회
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python main.py --force
+          else
+            python main.py
+          fi
+
+# ──────────────────────────────────────────────────────────────
+#  JOB 2 ▸ 예측 브리핑  (4주차 구현 예정)
+# ──────────────────────────────────────────────────────────────
+  daily-briefing:
+    name: 🔮 예측 브리핑
+    if: |
+      github.event.schedule == '0 21 * * 0-4' ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'daily-briefing')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 예측 브리핑 실행
+        env:
+          TZ: Asia/Seoul
+          GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+          ALPHA_VANTAGE_KEY:   ${{ secrets.ALPHA_VANTAGE_KEY }}
+          NAVER_CLIENT_ID:     ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: |
+          # 4주차 구현 후 아래 주석 해제
+          # python main_briefing.py
+          echo "⏳ 4주차 구현 예정 — main_briefing.py"
+
+# ──────────────────────────────────────────────────────────────
+#  JOB 3 ▸ DART 공시 수집  (4주차 구현 예정)
+# ──────────────────────────────────────────────────────────────
+  dart-disclosure:
+    name: 📋 DART 공시 수집
+    if: |
+      github.event.schedule == '0 0-9 * * 1-5' ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'dart-disclosure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: DART 공시 수집 실행
+        env:
+          TZ: Asia/Seoul
+          DART_API_KEY:        ${{ secrets.DART_API_KEY }}
+          GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+        run: |
+          # 4주차 구현 후 아래 주석 해제
+          # python main_dart.py
+          echo "⏳ 4주차 구현 예정 — main_dart.py"
