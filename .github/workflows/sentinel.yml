@@ -51,25 +51,22 @@ jobs:
     if: |
       github.event.schedule == '*/30 0-6 * * 1-5' ||
       (github.event_name == 'workflow_dispatch' && inputs.job == 'anomaly-watch')
-    runs-on: ubuntu-latest
+    # ★ self-hosted: 내 PC IP(키움 화이트리스트 등록된 IP)로 실행
+    runs-on: self-hosted
     timeout-minutes: 10
 
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
 
-      - name: Python 3.11 설치
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-
       - name: 패키지 설치
         run: pip install -r requirements.txt
 
-      - name: 특이점 감시 실행
+      # 스케줄 실행 — 장중 체크 활성 (TZ=Asia/Seoul 적용)
+      - name: 특이점 감시 실행 (스케줄)
+        if: github.event_name != 'workflow_dispatch'
         env:
-          TZ: Asia/Seoul   # datetime.now() → KST (장중 체크에 필수)
+          TZ: Asia/Seoul
           KIWOOM_APP_KEY:      ${{ secrets.KIWOOM_APP_KEY }}
           KIWOOM_APP_SECRET:   ${{ secrets.KIWOOM_APP_SECRET }}
           GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
@@ -77,13 +74,21 @@ jobs:
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
-        # 수동 실행 시 --force 로 장시간 체크 우회
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python main.py --force
-          else
-            python main.py
-          fi
+        run: python main.py
+
+      # 수동 실행 — --force 로 장중 체크 우회
+      - name: 특이점 감시 실행 (수동)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TZ: Asia/Seoul
+          KIWOOM_APP_KEY:      ${{ secrets.KIWOOM_APP_KEY }}
+          KIWOOM_APP_SECRET:   ${{ secrets.KIWOOM_APP_SECRET }}
+          GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+        run: python main.py --force
 
 # ──────────────────────────────────────────────────────────────
 #  JOB 2 ▸ 예측 브리핑  (4주차 구현 예정)
