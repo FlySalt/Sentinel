@@ -59,6 +59,11 @@ jobs:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
 
+      - name: Python PATH 설정
+        run: |
+          echo "C:\Users\heyli\AppData\Local\Programs\Python\Python313" >> $env:GITHUB_PATH
+          echo "C:\Users\heyli\AppData\Local\Programs\Python\Python313\Scripts" >> $env:GITHUB_PATH
+
       - name: 패키지 설치
         run: pip install -r requirements.txt
 
