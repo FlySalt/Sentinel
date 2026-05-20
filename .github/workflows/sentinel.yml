@@ -59,13 +59,8 @@ jobs:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
 
-      - name: Python PATH 설정
-        run: |
-          echo "C:\Users\heyli\AppData\Local\Programs\Python\Python313" >> $env:GITHUB_PATH
-          echo "C:\Users\heyli\AppData\Local\Programs\Python\Python313\Scripts" >> $env:GITHUB_PATH
-
       - name: 패키지 설치
-        run: pip install -r requirements.txt
+        run: C:\Users\heyli\AppData\Local\Programs\Python\Python313\python.exe -m pip install -r requirements.txt
 
       # 스케줄 실행 — 장중 체크 활성 (TZ=Asia/Seoul 적용)
       - name: 특이점 감시 실행 (스케줄)
@@ -79,7 +74,7 @@ jobs:
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
-        run: python main.py
+        run: C:\Users\heyli\AppData\Local\Programs\Python\Python313\python.exe main.py
 
       # 수동 실행 — --force 로 장중 체크 우회
       - name: 특이점 감시 실행 (수동)
@@ -93,7 +88,7 @@ jobs:
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
-        run: python main.py --force
+        run: C:\Users\heyli\AppData\Local\Programs\Python\Python313\python.exe main.py --force
 
 # ──────────────────────────────────────────────────────────────
 #  JOB 2 ▸ 예측 브리핑  (4주차 구현 예정)
