@@ -1,19 +1,27 @@
-"""Gemini 2.5 Flash-Lite — 특이점 상황 설명 생성."""
+"""Gemini 2.0 Flash-Lite — 특이점 상황 설명 생성.
 
+모델별 무료 tier 일일 한도 (RPD):
+  gemini-2.0-flash-lite : 1,500건  ← 사용
+  gemini-2.5-flash      :   500건
+  gemini-2.5-flash-lite :    20건  ← 사용 금지 (너무 낮음)
+"""
+
+import re
 import time
 
 from google import genai
 from google.genai import errors as genai_errors
 
-MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini-2.0-flash-lite"
 _MAX_RETRIES = 3
-_RETRY_DELAY = 5  # seconds
+_RETRY_DELAY = 35  # 429 응답의 retryDelay 기본값보다 여유 있게 대기
 
 
 def generate_alert_summary(api_key: str, alert: dict) -> str:
     """특이점 데이터를 받아 투자자용 상황 설명 3~4문장을 반환.
 
-    503/429 등 일시적 과부하 오류는 최대 3회 재시도.
+    503 서버 과부하 및 429 할당량 초과 오류는 최대 3회 재시도.
+    429 응답에 retryDelay가 있으면 해당 시간만큼 대기.
     """
     client = genai.Client(api_key=api_key)
 
@@ -40,11 +48,18 @@ def generate_alert_summary(api_key: str, alert: dict) -> str:
         try:
             response = client.models.generate_content(model=MODEL, contents=prompt)
             return response.text.strip()
-        except genai_errors.ServerError as e:
+        except (genai_errors.ServerError, genai_errors.ClientError) as e:
             last_err = e
-            if attempt < _MAX_RETRIES:
-                print(f"    Gemini 서버 과부하, {_RETRY_DELAY}초 후 재시도 ({attempt}/{_MAX_RETRIES})...")
-                time.sleep(_RETRY_DELAY)
+            if attempt >= _MAX_RETRIES:
+                break
+            # 429 응답의 retryDelay 값을 파싱해 정확히 대기
+            delay = _RETRY_DELAY
+            msg = str(e)
+            m = re.search(r"retryDelay.*?(\d+)s", msg)
+            if m:
+                delay = int(m.group(1)) + 5
+            print(f"    Gemini 오류, {delay}초 후 재시도 ({attempt}/{_MAX_RETRIES})...")
+            time.sleep(delay)
         except Exception as e:
             raise e
 
