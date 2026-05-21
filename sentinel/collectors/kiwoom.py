@@ -96,9 +96,15 @@ def get_stock_data(token: str, ticker: str, name: str, lookback_days: int = 5) -
 
         # 등락률 = pred_pre / 전일종가 × 100
         # pred_pre 문자열에 이미 +/- 부호 포함 (예: "+5500", "-106000")
-        pred_pre  = _parse_float(today_row.get("pred_pre", "0"))
+        pred_pre   = _parse_float(today_row.get("pred_pre", "0"))
         prev_close = price - pred_pre
         change_pct = (pred_pre / prev_close * 100) if prev_close != 0 else 0.0
+
+        # [진단] 날짜·전일대비 출력 — 일봉/주봉 확인용
+        dt = today_row.get("dt", "?")
+        prev_dt = rows[1].get("dt", "?") if len(rows) > 1 else "?"
+        print(f"    [진단] {name}: rows[0].dt={dt}, rows[1].dt={prev_dt}, "
+              f"pred_pre={today_row.get('pred_pre','?')}, change_pct={round(change_pct,2)}%")
 
         past_vols    = [int(_parse_float(r.get("trde_qty", "0"))) for r in rows[1:]]
         avg_vol      = sum(past_vols) / len(past_vols) if past_vols else 1
