@@ -1,7 +1,7 @@
 """키움 REST API — 토큰 발급 + 국내주식 시세/거래량 수집.
 
-실제 응답 기준 (ka10082 /api/dostk/chart, qry_term_tp="1" 일봉):
-  stk_stk_pole_chart_qry[0]  → 가장 최근 영업일
+실제 응답 기준 (ka10081 /api/dostk/chart 일봉):
+  stk_dt_pole_chart_qry[0]  → 가장 최근 영업일
     cur_prc       : 종가/현재가 (문자열, 부호 없음)
     pred_pre      : 전일대비 금액 ("+5500" / "-106000") — 이미 부호 포함
     pred_pre_sig  : 부호 코드 (2=상승, 3=보합, 5=하락)
@@ -9,7 +9,10 @@
     trde_qty      : 거래량
     dt            : 날짜 (YYYYMMDD)
 
-qry_term_tp 미지정 시 주봉 반환 → pred_pre가 주간 변동분이 되어 부정확.
+API 구분:
+  ka10081 = 주식일봉차트조회요청 (일봉) ← 사용
+  ka10082 = 주식주봉차트조회요청 (주봉) ← 사용 금지
+  ka10083 = 주식월봉차트조회요청 (월봉)
 """
 
 import requests
@@ -49,9 +52,10 @@ def _parse_float(value, default: float = 0.0) -> float:
 
 
 def _fetch_chart(token: str, ticker: str, rows: int = 10) -> list:
-    """ka10082 일봉차트 조회. 최근 rows개 반환.
+    """ka10081 일봉차트 조회. 최근 rows개 반환.
 
-    qry_term_tp="1" → 일봉 명시 (미지정 시 주봉 반환되는 문제 방지)
+    ka10081 = 주식일봉차트조회요청 (일봉 전용 API)
+    ka10082는 주봉 전용이므로 사용 금지.
     """
     today = datetime.now(KST).strftime("%Y%m%d")
     resp = requests.post(
@@ -59,13 +63,12 @@ def _fetch_chart(token: str, ticker: str, rows: int = 10) -> list:
         headers={
             "content-type": "application/json;charset=utf-8",
             "authorization": f"Bearer {token}",
-            "api-id": "ka10082",
+            "api-id": "ka10081",
         },
         json={
             "stk_cd": ticker,
             "base_dt": today,
             "upd_stkpc_tp": "1",
-            "qry_term_tp": "1",   # 1=일봉, 2=주봉, 3=월봉
         },
         timeout=10,
     )
@@ -73,7 +76,7 @@ def _fetch_chart(token: str, ticker: str, rows: int = 10) -> list:
     data = resp.json()
     if data.get("return_code", 0) != 0:
         raise ValueError(f"일봉 조회 오류: {data.get('return_msg', data)}")
-    return data.get("stk_stk_pole_chart_qry", [])[:rows]
+    return data.get("stk_dt_pole_chart_qry", [])[:rows]
 
 
 def get_stock_data(token: str, ticker: str, name: str, lookback_days: int = 5) -> dict | None:
@@ -99,12 +102,6 @@ def get_stock_data(token: str, ticker: str, name: str, lookback_days: int = 5) -
         pred_pre   = _parse_float(today_row.get("pred_pre", "0"))
         prev_close = price - pred_pre
         change_pct = (pred_pre / prev_close * 100) if prev_close != 0 else 0.0
-
-        # [진단] 날짜·전일대비 출력 — 일봉/주봉 확인용
-        dt = today_row.get("dt", "?")
-        prev_dt = rows[1].get("dt", "?") if len(rows) > 1 else "?"
-        print(f"    [진단] {name}: rows[0].dt={dt}, rows[1].dt={prev_dt}, "
-              f"pred_pre={today_row.get('pred_pre','?')}, change_pct={round(change_pct,2)}%")
 
         past_vols    = [int(_parse_float(r.get("trde_qty", "0"))) for r in rows[1:]]
         avg_vol      = sum(past_vols) / len(past_vols) if past_vols else 1
