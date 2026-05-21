@@ -3,13 +3,13 @@
 실제 응답 기준 (ka10082 /api/dostk/chart, qry_term_tp="1" 일봉):
   stk_stk_pole_chart_qry[0]  → 가장 최근 영업일
     cur_prc       : 종가/현재가 (문자열, 부호 없음)
-    pred_pre      : 전일대비 금액 ("+5500" / "-3000")
+    pred_pre      : 전일대비 금액 ("+5500" / "-106000") — 이미 부호 포함
     pred_pre_sig  : 부호 코드 (2=상승, 3=보합, 5=하락)
-    trde_tern_rt  : 등락률 문자열 ("+1.65" / "-3.57")  ← 실제 일간 등락률
+    trde_tern_rt  : 거래회전율 (거래량/상장주식수 %) — 등락률 아님
     trde_qty      : 거래량
     dt            : 날짜 (YYYYMMDD)
 
-주의: qry_term_tp 미지정 시 주봉 반환 → trde_tern_rt가 부정확해짐.
+qry_term_tp 미지정 시 주봉 반환 → pred_pre가 주간 변동분이 되어 부정확.
 """
 
 import requests
@@ -51,7 +51,7 @@ def _parse_float(value, default: float = 0.0) -> float:
 def _fetch_chart(token: str, ticker: str, rows: int = 10) -> list:
     """ka10082 일봉차트 조회. 최근 rows개 반환.
 
-    qry_term_tp="1" → 일봉 (미지정 시 주봉으로 반환되는 문제 있음)
+    qry_term_tp="1" → 일봉 명시 (미지정 시 주봉 반환되는 문제 방지)
     """
     today = datetime.now(KST).strftime("%Y%m%d")
     resp = requests.post(
@@ -80,10 +80,10 @@ def get_stock_data(token: str, ticker: str, name: str, lookback_days: int = 5) -
     """종목 1개의 현재가·등락률·거래량 배율 수집 (ka10082 단일 호출).
 
     rows[0] = 가장 최근 영업일 (오늘 또는 마지막 장 마감일)
-    rows[1:lookback_days+1] = 직전 N일 (평균 거래량 산출)
+    rows[1:] = 직전 N일 (평균 거래량 산출)
 
-    등락률: trde_tern_rt 필드 직접 사용 (API가 계산한 전일대비율).
-    거래량 배율: 최근 lookback_days 일 평균 대비.
+    등락률: pred_pre(전일대비 금액) 사용 — qry_term_tp="1"(일봉)이면 일간 변동분.
+      trde_tern_rt는 거래회전율(turnover ratio)이므로 등락률이 아님.
     """
     try:
         rows = _fetch_chart(token, ticker, rows=lookback_days + 2)
@@ -94,15 +94,11 @@ def get_stock_data(token: str, ticker: str, name: str, lookback_days: int = 5) -
         price    = int(_parse_float(today_row.get("cur_prc", "0")))
         volume   = int(_parse_float(today_row.get("trde_qty", "0")))
 
-        # 등락률: API 제공 trde_tern_rt 필드 우선 사용
-        # fallback: pred_pre / prev_close × 100
-        tern_rt = today_row.get("trde_tern_rt", "")
-        if tern_rt and tern_rt not in ("0", ""):
-            change_pct = _parse_float(tern_rt)
-        else:
-            prev_row   = rows[1] if len(rows) > 1 else None
-            prev_close = int(_parse_float(prev_row.get("cur_prc", "0"))) if prev_row else 0
-            change_pct = ((price - prev_close) / prev_close * 100) if prev_close != 0 else 0.0
+        # 등락률 = pred_pre / 전일종가 × 100
+        # pred_pre 문자열에 이미 +/- 부호 포함 (예: "+5500", "-106000")
+        pred_pre  = _parse_float(today_row.get("pred_pre", "0"))
+        prev_close = price - pred_pre
+        change_pct = (pred_pre / prev_close * 100) if prev_close != 0 else 0.0
 
         past_vols    = [int(_parse_float(r.get("trde_qty", "0"))) for r in rows[1:]]
         avg_vol      = sum(past_vols) / len(past_vols) if past_vols else 1

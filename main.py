@@ -85,7 +85,7 @@ def check_env() -> bool:
 def main(skip_market_check: bool = False) -> None:
     print("=" * 50)
     print("  Sentinel — 특이점 감시 알림 시작")
-    print(f"  실행 시각: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  실행 시각: {datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M:%S')} KST")
     print("=" * 50)
 
     # 장 시간 체크
