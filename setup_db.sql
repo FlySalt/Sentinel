@@ -9,8 +9,9 @@ CREATE TABLE IF NOT EXISTS public.alerts (
     price       integer     NOT NULL,
     change_pct  numeric(8, 2) NOT NULL,
     volume_ratio numeric(8, 2) NOT NULL,
-    ai_summary  text,
-    alert_type  text
+    ai_summary   text,
+    alert_type   text,
+    triggered_at text        -- KST 시각 문자열 (예: "2026-05-21 14:43:00 KST")
 );
 
 -- 최신순 조회를 위한 인덱스
