@@ -1,9 +1,9 @@
 """Gemini 2.0 Flash-Lite — 특이점 상황 설명 생성.
 
 모델별 무료 tier 일일 한도 (RPD):
-  gemini-2.0-flash-lite : 1,500건  ← 사용
-  gemini-2.5-flash      :   500건
+  gemini-2.5-flash      :   500건  ← 사용
   gemini-2.5-flash-lite :    20건  ← 사용 금지 (너무 낮음)
+  gemini-2.0-flash-lite :     0건  ← 이 API 키에서 차단됨
 """
 
 import re
@@ -12,7 +12,7 @@ import time
 from google import genai
 from google.genai import errors as genai_errors
 
-MODEL = "gemini-2.0-flash-lite"
+MODEL = "gemini-2.5-flash"
 _MAX_RETRIES = 3
 _RETRY_DELAY = 35  # 429 응답의 retryDelay 기본값보다 여유 있게 대기
 
