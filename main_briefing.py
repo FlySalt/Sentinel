@@ -29,7 +29,6 @@ load_dotenv(find_dotenv(usecwd=True))
 
 from sentinel.ai.gemini_client import generate_briefing_summary
 from sentinel.collectors.alpha_vantage import collect_macro_factors
-from sentinel.collectors.kiwoom import get_access_token, get_usdkrw
 from sentinel.collectors.news import fetch_macro_news
 from sentinel.notifiers.supabase_writer import save_briefing
 from sentinel.notifiers.telegram import send_alert
@@ -37,7 +36,6 @@ from sentinel.notifiers.telegram import send_alert
 KST = ZoneInfo("Asia/Seoul")
 
 REQUIRED_ENV = [
-    "KIWOOM_APP_KEY", "KIWOOM_APP_SECRET",
     "ALPHA_VANTAGE_KEY",
     "GOOGLE_API_KEY",
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
@@ -188,28 +186,22 @@ def main() -> None:
     config = load_config()
     watchlist = config.get("watchlist", [])
 
-    # ── STEP 1: Alpha Vantage 거시 팩터 ──────────────────────────────────────
-    print("\n[1/5] Alpha Vantage 거시 팩터 수집...")
+    # ── STEP 1: Alpha Vantage 거시 팩터 + USD/KRW ────────────────────────────
+    print("\n[1/5] Alpha Vantage 거시 팩터 수집 (7팩터 + 환율, 약 2분 소요)...")
     factors = collect_macro_factors(os.environ["ALPHA_VANTAGE_KEY"])
     if factors.get("errors"):
         for err in factors["errors"]:
             print(f"  ⚠ {err}")
 
-    # ── STEP 2: 키움 USD/KRW 환율 ────────────────────────────────────────────
-    print("\n[2/5] 키움 USD/KRW 환율 수집...")
-    usdkrw: float | None = None
-    try:
-        token = get_access_token(
-            os.environ["KIWOOM_APP_KEY"],
-            os.environ["KIWOOM_APP_SECRET"],
-        )
-        usdkrw = get_usdkrw(token)
-        if usdkrw:
-            print(f"  USD/KRW: {usdkrw:,.1f}원")
-        else:
-            print("  USD/KRW: 수집 실패 (None)")
-    except Exception as e:
-        print(f"  키움 토큰/환율 수집 실패: {e}")
+    # USD/KRW는 Alpha Vantage에서 수집 (키움 환율 API 미지원)
+    usdkrw_factor = factors.get("usdkrw")
+    usdkrw: float | None = usdkrw_factor["value"] if usdkrw_factor and "error" not in usdkrw_factor else None
+
+    print("\n[2/5] 환율 확인...")
+    if usdkrw:
+        print(f"  USD/KRW: {usdkrw:,.1f}원 (Alpha Vantage)")
+    else:
+        print("  USD/KRW: 수집 실패")
 
     # ── STEP 3: Google News RSS ───────────────────────────────────────────────
     print("\n[3/5] 글로벌 매크로 뉴스 수집...")

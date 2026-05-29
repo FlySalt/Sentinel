@@ -17,8 +17,8 @@ import time
 from google import genai
 from google.genai import errors as genai_errors
 
-MODEL_FLASH  = "gemini-2.5-flash"   # 특이점 알림, 공시 요약
-MODEL_PRO    = "gemini-2.5-pro"     # 예측 브리핑
+MODEL_FLASH  = "gemini-2.5-flash"   # 특이점 알림, 공시 요약, 예측 브리핑
+MODEL_PRO    = "gemini-2.5-flash"   # Pro는 이 API 키에서 limit=0 → Flash로 대체
 MODEL        = MODEL_FLASH           # 하위 호환 (generate_alert_summary용)
 
 _MAX_RETRIES = 3

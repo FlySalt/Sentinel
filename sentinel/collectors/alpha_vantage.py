@@ -13,10 +13,15 @@ Alpha Vantage 무료 키: 25회/일, 5회/분
   → 종목당 1회 호출 → 총 7회 사용
 """
 
+import time
+
 import requests
 from datetime import datetime, timezone
 
 BASE_URL = "https://www.alphavantage.co/query"
+
+# 무료 키: 5회/분 → 요청 사이 13초 대기
+_FREE_TIER_DELAY = 13
 
 # 팩터별 Alpha Vantage 심볼 매핑
 _SYMBOLS: dict[str, str] = {
@@ -67,6 +72,45 @@ def _price_from_quote(quote: dict) -> float:
         return 0.0
 
 
+def _fetch_vix_yahoo() -> float:
+    """Yahoo Finance 비공식 API로 VIX 현재값 조회 (API 키 불필요)."""
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX"
+    resp = requests.get(
+        url,
+        params={"interval": "1d", "range": "1d"},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    meta = data["chart"]["result"][0]["meta"]
+    price = meta.get("regularMarketPrice") or meta.get("previousClose", 0)
+    return round(float(price), 2)
+
+
+def _get_fx_rate(api_key: str, from_currency: str, to_currency: str) -> float:
+    """CURRENCY_EXCHANGE_RATE 엔드포인트로 현재 환율 조회."""
+    resp = requests.get(
+        BASE_URL,
+        params={
+            "function": "CURRENCY_EXCHANGE_RATE",
+            "from_currency": from_currency,
+            "to_currency": to_currency,
+            "apikey": api_key,
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    rate_info = data.get("Realtime Currency Exchange Rate", {})
+    if not rate_info:
+        raise ValueError(f"환율 빈 응답: {from_currency}/{to_currency} — {data}")
+    try:
+        return round(float(rate_info["5. Exchange Rate"]), 2)
+    except (KeyError, ValueError) as e:
+        raise ValueError(f"환율 파싱 오류: {rate_info}") from e
+
+
 def _get_treasury_rate(api_key: str, maturity: str = "10year") -> float:
     """TREASURY_YIELD 엔드포인트로 미국 국채 금리 조회."""
     resp = requests.get(
@@ -106,12 +150,14 @@ def collect_macro_factors(api_key: str) -> dict:
       "errors":    ["sox: 오류 메시지", ...],
     }
     """
-    result: dict = {k: None for k in ["nasdaq", "sp500", "sox", "vix", "dxy", "kospi_fut", "us10y"]}
+    result: dict = {k: None for k in ["nasdaq", "sp500", "sox", "vix", "dxy", "kospi_fut", "us10y", "usdkrw"]}
     errors: list[str] = []
 
-    # 등락률 팩터 (Global Quote)
+    # 등락률 팩터 (Global Quote) — 요청 사이 13초 대기 (무료 5회/분)
     pct_factors = ["nasdaq", "sp500", "sox", "dxy", "kospi_fut"]
-    for factor in pct_factors:
+    for i, factor in enumerate(pct_factors):
+        if i > 0:
+            time.sleep(_FREE_TIER_DELAY)
         symbol = _SYMBOLS[factor]
         try:
             quote = _get_global_quote(api_key, symbol)
@@ -123,18 +169,18 @@ def collect_macro_factors(api_key: str) -> dict:
             result[factor] = {"value": 0.0, "unit": "%", "symbol": symbol, "error": str(e)}
             print(f"  {factor:12s}: 수집 실패 — {e}")
 
-    # VIX — Global Quote로 현재값 조회
+    # VIX — Yahoo Finance 비공식 API (Alpha Vantage 무료 키 미지원)
     try:
-        quote = _get_global_quote(api_key, "VIX")
-        vix_val = _price_from_quote(quote)
-        result["vix"] = {"value": vix_val, "unit": "pt", "symbol": "VIX"}
-        print(f"  {'vix':12s}: {vix_val:.2f} pt")
+        vix_val = _fetch_vix_yahoo()
+        result["vix"] = {"value": vix_val, "unit": "pt", "symbol": "^VIX"}
+        print(f"  {'vix':12s}: {vix_val:.2f} pt  (Yahoo Finance)")
     except Exception as e:
         errors.append(f"vix: {e}")
-        result["vix"] = {"value": 0.0, "unit": "pt", "symbol": "VIX", "error": str(e)}
+        result["vix"] = {"value": 0.0, "unit": "pt", "symbol": "^VIX", "error": str(e)}
         print(f"  {'vix':12s}: 수집 실패 — {e}")
 
     # 미국 10년물 국채금리
+    time.sleep(_FREE_TIER_DELAY)
     try:
         rate = _get_treasury_rate(api_key, _US10Y_MATURITY)
         result["us10y"] = {"value": rate, "unit": "%", "symbol": "US10Y"}
@@ -143,6 +189,17 @@ def collect_macro_factors(api_key: str) -> dict:
         errors.append(f"us10y: {e}")
         result["us10y"] = {"value": 0.0, "unit": "%", "symbol": "US10Y", "error": str(e)}
         print(f"  {'us10y':12s}: 수집 실패 — {e}")
+
+    # USD/KRW 환율 (키움 REST API 미지원 → Alpha Vantage FX로 대체)
+    time.sleep(_FREE_TIER_DELAY)
+    try:
+        usdkrw = _get_fx_rate(api_key, "USD", "KRW")
+        result["usdkrw"] = {"value": usdkrw, "unit": "원", "symbol": "USDKRW"}
+        print(f"  {'usdkrw':12s}: {usdkrw:,.2f}원")
+    except Exception as e:
+        errors.append(f"usdkrw: {e}")
+        result["usdkrw"] = {"value": 0.0, "unit": "원", "symbol": "USDKRW", "error": str(e)}
+        print(f"  {'usdkrw':12s}: 수집 실패 — {e}")
 
     result["errors"] = errors
     result["collected_at"] = datetime.now(timezone.utc).isoformat()
