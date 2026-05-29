@@ -1,13 +1,15 @@
-"""Gemini API 래퍼 — 특이점 알림 / 예측 브리핑 / 공시 요약.
+"""Gemini API 래퍼 — 특이점 알림 / 예측 브리핑 / 공시 요약 / 마감 요약 / 수급 코멘트.
 
 용도별 모델:
   특이점 알림  : gemini-2.5-flash      (500 RPD 무료)
-  예측 브리핑  : gemini-2.5-pro        (복잡한 추론)
+  예측 브리핑  : gemini-2.5-flash      (Pro는 이 API 키에서 limit=0)
   공시 요약    : gemini-2.5-flash      (문서 처리)
+  마감 요약    : gemini-2.5-flash-lite (하루 1회 — 20 RPD 충분)
+  수급 코멘트  : gemini-2.5-flash-lite (주목 종목만 — 일 수회)
 
 모델별 무료 tier 일일 한도 (RPD):
   gemini-2.5-flash      :   500건
-  gemini-2.5-flash-lite :    20건  ← 사용 금지 (너무 낮음)
+  gemini-2.5-flash-lite :    20건  ← 하루 소수 호출 기능에만 사용
   gemini-2.0-flash-lite :     0건  ← 이 API 키에서 차단됨
 """
 
@@ -17,9 +19,10 @@ import time
 from google import genai
 from google.genai import errors as genai_errors
 
-MODEL_FLASH  = "gemini-2.5-flash"   # 특이점 알림, 공시 요약, 예측 브리핑
-MODEL_PRO    = "gemini-2.5-flash"   # Pro는 이 API 키에서 limit=0 → Flash로 대체
-MODEL        = MODEL_FLASH           # 하위 호환 (generate_alert_summary용)
+MODEL_FLASH      = "gemini-2.5-flash"       # 특이점 알림, 공시 요약, 예측 브리핑
+MODEL_PRO        = "gemini-2.5-flash"       # Pro는 이 API 키에서 limit=0 → Flash로 대체
+MODEL_FLASH_LITE = "gemini-2.5-flash-lite"  # 마감 요약, 수급 코멘트 (하루 소수 호출)
+MODEL            = MODEL_FLASH               # 하위 호환 (generate_alert_summary용)
 
 _MAX_RETRIES = 3
 _RETRY_DELAY = 35  # 429 응답의 retryDelay 기본값보다 여유 있게 대기
@@ -204,3 +207,101 @@ def generate_disclosure_summary(api_key: str, disclosure: dict) -> tuple[str, st
             break
 
     return response, impact
+
+
+def generate_close_summary(
+    api_key: str,
+    date_str: str,
+    kospi: dict | None,
+    kosdaq: dict | None,
+    stocks: list[dict],
+    alerts_today: list[dict],
+) -> str:
+    """장 마감 일일 요약 생성 (gemini-2.5-flash-lite).
+
+    Args:
+        date_str    : "YYYY-MM-DD"
+        kospi       : {"index_code","price","change_pct"} | None
+        kosdaq      : 위와 동일 | None
+        stocks      : [{"ticker","name","price","change_pct"}, ...]
+        alerts_today: 오늘 발생한 특이점 알림 목록 (Supabase alerts)
+
+    Returns: AI 생성 한 줄 평 + 주목 종목 코멘트 문자열
+    """
+    def fmt_idx(idx: dict | None) -> str:
+        if not idx:
+            return "데이터없음"
+        return f"{idx['change_pct']:+.2f}% ({idx['price']:,.2f})"
+
+    stocks_text = "\n".join(
+        f"  {s['name']}({s['ticker']}): {s['change_pct']:+.2f}%  {s['price']:,}원"
+        for s in stocks
+    )
+    if alerts_today:
+        alerts_text = "\n".join(
+            f"  - {a.get('name','?')} {a.get('change_pct',0):+.2f}% "
+            f"(거래량 {a.get('volume_ratio',0):.1f}배)"
+            for a in alerts_today
+        )
+    else:
+        alerts_text = "  없음"
+
+    prompt = f"""당신은 국내 주식 시장 분석 어시스턴트입니다.
+오늘({date_str}) 장 마감 데이터를 바탕으로 간결한 일일 요약을 작성해주세요.
+
+## 시장 지수
+- 코스피: {fmt_idx(kospi)}
+- 코스닥: {fmt_idx(kosdaq)}
+
+## 관심 종목 당일 성과
+{stocks_text}
+
+## 오늘 감지된 특이점 알림
+{alerts_text}
+
+## 요청
+1. 오늘 시장 분위기 한 줄 평 (30자 이내)
+2. 관심 종목 중 가장 주목할 움직임 1~2개와 간략한 이유
+3. 특이점 알림 요약 (없으면 "특이점 없음"으로 표기)
+
+투자 권유 없이 객관적으로 작성하세요."""
+
+    return _call_with_retry(api_key, MODEL_FLASH_LITE, prompt)
+
+
+def generate_flow_comment(
+    api_key: str,
+    ticker: str,
+    name: str,
+    foreign_net: int,
+    institution_net: int,
+    signals: list[str],
+) -> str:
+    """수급 주목 종목 한 줄 해석 생성 (gemini-2.5-flash-lite).
+
+    Args:
+        foreign_net     : 외국인 순매수 금액 (원, 음수=순매도)
+        institution_net : 기관 순매수 금액 (원)
+        signals         : 감지된 시그널 목록 (예: ["외국인 3일 연속 순매수", "기관 동시 매수"])
+
+    Returns: 한 줄 해석 문자열 (50자 내외)
+    """
+    def fmt_amt(amt: int) -> str:
+        """원 → 억원 변환."""
+        return f"{amt / 1e8:+.0f}억원"
+
+    signals_text = "\n".join(f"  - {s}" for s in signals) if signals else "  없음"
+
+    prompt = f"""국내 주식 수급 분석가로서 다음 종목의 수급 데이터를 한 줄로 해석해주세요.
+
+종목: {name} ({ticker})
+외국인 순매수: {fmt_amt(foreign_net)}
+기관 순매수: {fmt_amt(institution_net)}
+
+감지된 시그널:
+{signals_text}
+
+요청: 위 데이터의 의미를 투자자 관점에서 50자 이내 한 줄로 설명하세요.
+투자 권유 없이 중립적으로 작성하세요."""
+
+    return _call_with_retry(api_key, MODEL_FLASH_LITE, prompt)

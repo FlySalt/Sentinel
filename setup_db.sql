@@ -50,3 +50,38 @@ CREATE TABLE IF NOT EXISTS public.disclosures (
 CREATE INDEX IF NOT EXISTS disclosures_created_at_idx ON public.disclosures (created_at DESC);
 CREATE INDEX IF NOT EXISTS disclosures_ticker_idx     ON public.disclosures (ticker);
 ALTER TABLE public.disclosures DISABLE ROW LEVEL SECURITY;
+
+-- ── daily_summary 테이블 (장 마감 일일 요약) ──────────────────────────────
+CREATE TABLE IF NOT EXISTS public.daily_summary (
+    id              uuid          DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at      timestamptz   DEFAULT now(),
+    date            text          NOT NULL,          -- YYYY-MM-DD
+    market_summary  text,                            -- "코스피 +0.8% / 코스닥 -0.3%"
+    stock_data      jsonb,                           -- 종목별 종가·등락률
+    alerts_count    integer       DEFAULT 0,         -- 오늘 발생한 특이점 수
+    ai_summary      text                             -- Gemini 마감 요약
+);
+
+CREATE INDEX IF NOT EXISTS daily_summary_date_idx ON public.daily_summary (date DESC);
+ALTER TABLE public.daily_summary DISABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT ON public.daily_summary TO service_role;
+
+-- ── flows 테이블 (외국인·기관 수급) ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.flows (
+    id                              uuid          DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at                      timestamptz   DEFAULT now(),
+    date                            text          NOT NULL,    -- YYYY-MM-DD
+    ticker                          text          NOT NULL,
+    name                            text          NOT NULL,
+    foreign_net                     bigint        DEFAULT 0,   -- 외국인 순매수 (원)
+    institution_net                 bigint        DEFAULT 0,   -- 기관 순매수 (원)
+    foreign_consecutive_days        integer       DEFAULT 0,   -- 양수=연속매수, 음수=연속매도
+    institution_consecutive_days    integer       DEFAULT 0,
+    direction_changed               boolean       DEFAULT false,
+    ai_comment                      text
+);
+
+CREATE INDEX IF NOT EXISTS flows_date_idx   ON public.flows (date DESC);
+CREATE INDEX IF NOT EXISTS flows_ticker_idx ON public.flows (ticker, date DESC);
+ALTER TABLE public.flows DISABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT ON public.flows TO service_role;

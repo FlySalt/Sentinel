@@ -20,6 +20,14 @@ on:
     # 09:00 KST = 00:00 UTC  /  18:00 KST = 09:00 UTC
     - cron: '0 0-9 * * 1-5'
 
+    # ── 장 마감 요약: 평일 15:40 KST ────────────────────────
+    # 15:40 KST = 06:40 UTC
+    - cron: '40 6 * * 1-5'
+
+    # ── 수급 추적: 평일 16:30 KST ────────────────────────────
+    # 16:30 KST = 07:30 UTC
+    - cron: '30 7 * * 1-5'
+
   # 수동 실행 — 실행할 Job을 선택 가능
   workflow_dispatch:
     inputs:
@@ -32,6 +40,8 @@ on:
           - anomaly-watch
           - daily-briefing
           - dart-disclosure
+          - market-close
+          - flow-tracking
 
 # Node.js 24 미리 적용 (2026-06-02 강제 전환 대비)
 env:
@@ -161,3 +171,63 @@ jobs:
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
         run: python main_dart.py
+
+# ──────────────────────────────────────────────────────────────
+#  JOB 4 ▸ 장 마감 일일 요약  (평일 15:40 KST)
+# ──────────────────────────────────────────────────────────────
+  market-close:
+    name: 📊 장 마감 요약
+    if: |
+      github.event.schedule == '40 6 * * 1-5' ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'market-close')
+    runs-on: self-hosted
+    timeout-minutes: 10
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 패키지 설치
+        run: C:\Users\heyli\AppData\Local\Programs\Python\Python313\python.exe -m pip install -r requirements.txt
+
+      - name: 장 마감 요약 실행
+        env:
+          TZ: Asia/Seoul
+          KIWOOM_APP_KEY:      ${{ secrets.KIWOOM_APP_KEY }}
+          KIWOOM_APP_SECRET:   ${{ secrets.KIWOOM_APP_SECRET }}
+          GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+        run: C:\Users\heyli\AppData\Local\Programs\Python\Python313\python.exe main_close.py
+
+# ──────────────────────────────────────────────────────────────
+#  JOB 5 ▸ 수급 추적  (평일 16:30 KST)
+# ──────────────────────────────────────────────────────────────
+  flow-tracking:
+    name: 💹 수급 추적
+    if: |
+      github.event.schedule == '30 7 * * 1-5' ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'flow-tracking')
+    runs-on: self-hosted
+    timeout-minutes: 10
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 패키지 설치
+        run: C:\Users\heyli\AppData\Local\Programs\Python\Python313\python.exe -m pip install -r requirements.txt
+
+      - name: 수급 추적 실행
+        env:
+          TZ: Asia/Seoul
+          KIWOOM_APP_KEY:      ${{ secrets.KIWOOM_APP_KEY }}
+          KIWOOM_APP_SECRET:   ${{ secrets.KIWOOM_APP_SECRET }}
+          GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+        run: C:\Users\heyli\AppData\Local\Programs\Python\Python313\python.exe main_flow.py
