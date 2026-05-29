@@ -155,19 +155,31 @@ def generate_briefing_summary(
 def generate_disclosure_summary(api_key: str, disclosure: dict) -> tuple[str, str]:
     """DART 공시 원문 3줄 요약 + 포트폴리오 영향 분석 (gemini-2.5-flash).
 
+    disclosure 딕셔너리에 'document' 키가 있으면 원문 텍스트를 함께 전달.
+    없으면 제목만으로 분석 (할루시네이션 가능성 있음을 명시).
+
     Returns: (ai_summary, impact)
       impact: "긍정" | "중립" | "부정"
     """
+    doc_text = disclosure.get("document", "")
+    if doc_text:
+        doc_section = f"\n## 공시 원문 (일부)\n{doc_text[:3000]}"
+        instruction = "위 공시 원문을 바탕으로"
+    else:
+        doc_section = ""
+        instruction = "공시 제목만 있으므로, 해당 유형의 일반적인 영향을 바탕으로"
+
     prompt = f"""당신은 국내 주식 공시 전문가입니다.
 다음 DART 공시를 분석해주세요.
 
 ## 공시 정보
 - 종목: {disclosure['company_name']} ({disclosure['ticker']})
 - 공시 유형: {disclosure.get('disclosure_type', '알 수 없음')}
-- 공시 제목: {disclosure['title']}
+- 공시 제목: {disclosure['title']}{doc_section}
 
 ## 요청 사항
-1. 공시 내용 3줄 요약 (핵심 수치와 날짜 포함)
+{instruction} 아래 형식으로 작성해주세요.
+1. 공시 내용 3줄 요약 (원문의 핵심 수치와 날짜 포함, 없으면 생략)
 2. 포트폴리오 영향: 긍정 / 중립 / 부정 중 하나만 선택 후 이유 1문장
 
 형식:

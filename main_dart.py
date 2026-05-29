@@ -73,7 +73,9 @@ def check_env() -> bool:
 def fetch_recent_disclosures(dart_key: str, watchlist: list, hours: int = 1) -> list[dict]:
     """관심 종목 최근 N시간 이내 신규 공시 수집.
 
-    Returns: [{"ticker", "company_name", "title", "disclosure_type", "rcp_no", "rcept_dt"}, ...]
+    Returns: [{"ticker", "company_name", "title", "disclosure_type",
+               "rcp_no", "rcept_dt", "document"}, ...]
+      document: 공시 원문 텍스트 (BeautifulSoup으로 HTML 파싱, 없으면 "")
     """
     try:
         import opendartreader as OpenDartReader
@@ -94,27 +96,51 @@ def fetch_recent_disclosures(dart_key: str, watchlist: list, hours: int = 1) -> 
             if df is None or df.empty:
                 continue
             for _, row in df.iterrows():
-                # rcept_dt: YYYYMMDD 형식, 오늘 또는 어제만 필터
                 rcept_dt_str = str(row.get("rcept_dt", ""))
                 try:
                     rcept_dt = datetime.strptime(rcept_dt_str, "%Y%m%d").replace(tzinfo=KST)
-                    # 시간 단위 필터는 DART API가 날짜 단위 → 날짜만 체크
                     if rcept_dt.date() < since.date():
                         continue
                 except ValueError:
                     pass
+                rcp_no = str(row.get("rcept_no", ""))
+                # 공시 원문 텍스트 수집
+                doc_text = _fetch_document_text(dart, rcp_no)
                 results.append({
                     "ticker":          ticker,
                     "company_name":    name,
                     "title":           str(row.get("report_nm", "")),
                     "disclosure_type": str(row.get("report_nm", "")),
-                    "rcp_no":          str(row.get("rcept_no", "")),
+                    "rcp_no":          rcp_no,
                     "rcept_dt":        rcept_dt_str,
+                    "document":        doc_text,
                 })
         except Exception as e:
             print(f"  [dart] {name}({ticker}) 공시 조회 실패: {e}")
 
     return results
+
+
+def _fetch_document_text(dart, rcp_no: str) -> str:
+    """공시 접수번호로 원문 텍스트 추출 (HTML → 순수 텍스트).
+
+    실패 시 빈 문자열 반환 (원문 없어도 AI가 제목 기반으로 처리).
+    """
+    if not rcp_no:
+        return ""
+    try:
+        doc = dart.document(rcp_no)       # HTML 문자열 반환
+        if not doc:
+            return ""
+        # BeautifulSoup으로 태그 제거
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(doc, "html.parser")
+        text = soup.get_text(separator="\n", strip=True)
+        # 연속 빈줄 정리 후 앞 3000자만 사용
+        lines = [l for l in text.splitlines() if l.strip()]
+        return "\n".join(lines)[:3000]
+    except Exception:
+        return ""
 
 
 # ── 긴급 분류 ────────────────────────────────────────────────────────────────
