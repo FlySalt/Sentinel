@@ -207,23 +207,53 @@ def get_index_price(index_code: str) -> dict | None:
 # ── 외국인·기관 수급 ────────────────────────────────────────────────────────────
 
 def get_investor_trend(token: str, ticker: str, name: str, days: int = 20) -> list[dict]:
-    """외국인 일별 순매수 금액 조회 (ka10008 주식외국인종목별매매동향).
+    """외국인·기관 일별 순매수 금액 조회.
 
-    URI: /api/dostk/frgnistt  (확인됨)
-    응답 키: stk_frgnr
-    응답 필드: dt, close_pric, chg_qty (변동수량=순매수주식수), ...
+    데이터 소스:
+      ka10008 (/api/dostk/frgnistt): 외국인 50일 목록 → foreign_net 히스토리
+      ka10009 (/api/dostk/frgnistt): 당일 외국인+기관 → institution_net 보완
 
-    TODO: 기관 데이터(institution_net)는 키움 REST API 포털에서
-          해당 API ID 확인 후 추가 예정 (현재 institution_net=0 반환).
+    응답 필드 (확인됨):
+      ka10008: stk_frgnr[].{dt, close_pric, chg_qty}
+      ka10009: {date, close_pric, orgn_daly_nettrde, frgnr_daly_nettrde}
+               orgn_daly_nettrde / frgnr_daly_nettrde 단위: 주식수 (주)
+               → 금액 근사치 = 순매매주식수 × close_pric
+
+    NOTE: 당일 데이터는 T+2 결제 특성상 장 마감 후에도 당일 값이 비어 있을 수 있음.
+          이 경우 당일 행은 chg_qty=0으로 처리되며, 직전 확정 영업일 데이터부터 반환.
 
     days: 조회 일수 (최대 20일 권장)
     Returns: [{"date", "foreign_net", "institution_net"}, ...] 최신순
-      - foreign_net: 순매수수량 × 종가 (원화 금액 근사치)
-      - institution_net: 0 (미지원 — 추후 추가)
+      - foreign_net / institution_net: 원화 금액 근사치 (순매매주식수 × 종가)
       - 실패 시 [] 반환
     """
+    # ── 1. ka10009: 당일 기관 데이터 수집 ──────────────────────────────────────
+    today_inst_net  = 0
+    today_date_str  = ""
     try:
-        resp = requests.post(
+        resp9 = requests.post(
+            f"{BASE_URL}/api/dostk/frgnistt",
+            headers={
+                "content-type": "application/json;charset=utf-8",
+                "authorization": f"Bearer {token}",
+                "api-id": "ka10009",
+            },
+            json={"stk_cd": ticker},
+            timeout=10,
+        )
+        resp9.raise_for_status()
+        d9 = resp9.json()
+        if d9.get("return_code", 0) == 0:
+            today_date_str = str(d9.get("date", ""))
+            price9 = abs(_parse_float(d9.get("close_pric", "0")))
+            orgn_qty  = _parse_float(d9.get("orgn_daly_nettrde", "0") or "0")
+            today_inst_net = int(orgn_qty * price9)
+    except Exception:
+        pass   # 기관 데이터 실패 시 0으로 처리
+
+    # ── 2. ka10008: 외국인 히스토리 수집 ───────────────────────────────────────
+    try:
+        resp8 = requests.post(
             f"{BASE_URL}/api/dostk/frgnistt",
             headers={
                 "content-type": "application/json;charset=utf-8",
@@ -233,33 +263,30 @@ def get_investor_trend(token: str, ticker: str, name: str, days: int = 20) -> li
             json={"stk_cd": ticker},
             timeout=10,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("return_code", 0) != 0:
-            raise ValueError(f"수급 조회 오류: {data.get('return_msg', data)}")
+        resp8.raise_for_status()
+        data8 = resp8.json()
+        if data8.get("return_code", 0) != 0:
+            raise ValueError(f"수급 조회 오류: {data8.get('return_msg', data8)}")
 
-        rows = data.get("stk_frgnr", [])   # 확인된 응답 키
+        rows = data8.get("stk_frgnr", [])
         if not rows:
             raise ValueError("빈 응답")
 
-        # chg_qty=0인 행은 결제 미확정(T+2) → 스킵
-        valid_rows = [r for r in rows if r.get("chg_qty", "0") != "0"]
-        if not valid_rows:
-            # 전부 0이면 최신 2개 행이라도 사용 (데이터 없는 날)
-            valid_rows = rows
+        # chg_qty=0인 미확정 행 제외
+        valid_rows = [r for r in rows if r.get("chg_qty", "0") != "0"] or rows
 
         result = []
         for row in valid_rows[:days]:
             date_str = str(row.get("dt", ""))
-            # close_pric에 부호(+/-) 포함 → abs 처리
             price    = abs(_parse_float(row.get("close_pric", "0")))
-            # chg_qty: 변동수량 (양수=외국인 순매수, 음수=순매도)
             chg_qty  = _parse_float(row.get("chg_qty", "0"))
-            frgn_net = int(chg_qty * price)   # 수량 × 종가 = 금액 근사치
+            frgn_net = int(chg_qty * price)
+            # 같은 날짜면 ka10009에서 수집한 기관 데이터 사용
+            inst_net = today_inst_net if date_str == today_date_str else 0
             result.append({
                 "date":            date_str,
                 "foreign_net":     frgn_net,
-                "institution_net": 0,  # TODO: 키움 기관 API ID 확인 후 추가
+                "institution_net": inst_net,
             })
 
         return result
