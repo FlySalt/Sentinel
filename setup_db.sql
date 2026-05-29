@@ -19,3 +19,34 @@ CREATE INDEX IF NOT EXISTS alerts_created_at_idx ON public.alerts (created_at DE
 
 -- RLS 비활성화 (서비스 롤 키로 서버 사이드에서만 접근)
 ALTER TABLE public.alerts DISABLE ROW LEVEL SECURITY;
+
+-- ── briefings 테이블 (예측 브리핑) ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.briefings (
+    id               uuid          DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at       timestamptz   DEFAULT now(),
+    date             text          NOT NULL,       -- YYYY-MM-DD
+    content          text,                         -- AI 브리핑 본문
+    confidence_score integer,                      -- 신뢰도 0~100
+    risk_level       text,                         -- 없음/낮음/중간/높음
+    factor_scores    jsonb                          -- 팩터별 값·판단
+);
+
+CREATE INDEX IF NOT EXISTS briefings_date_idx ON public.briefings (date DESC);
+ALTER TABLE public.briefings DISABLE ROW LEVEL SECURITY;
+
+-- ── disclosures 테이블 (DART 공시) ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.disclosures (
+    id               uuid          DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at       timestamptz   DEFAULT now(),
+    ticker           text          NOT NULL,
+    company_name     text          NOT NULL,
+    title            text          NOT NULL,
+    disclosure_type  text,
+    urgency          text          DEFAULT '일반',  -- 긴급/일반
+    ai_summary       text,
+    impact           text                           -- 긍정/중립/부정
+);
+
+CREATE INDEX IF NOT EXISTS disclosures_created_at_idx ON public.disclosures (created_at DESC);
+CREATE INDEX IF NOT EXISTS disclosures_ticker_idx     ON public.disclosures (ticker);
+ALTER TABLE public.disclosures DISABLE ROW LEVEL SECURITY;

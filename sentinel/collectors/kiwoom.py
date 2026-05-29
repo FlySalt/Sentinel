@@ -79,6 +79,40 @@ def _fetch_chart(token: str, ticker: str, rows: int = 10) -> list:
     return data.get("stk_dt_pole_chart_qry", [])[:rows]
 
 
+def get_usdkrw(token: str) -> float | None:
+    """키움 API로 USD/KRW 환율 조회 (ka10090 현재환율조회).
+
+    반환: float (예: 1380.5) 또는 실패 시 None
+    """
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/api/dostk/forex",
+            headers={
+                "content-type": "application/json;charset=utf-8",
+                "authorization": f"Bearer {token}",
+                "api-id": "ka10090",
+            },
+            json={"frc_cd": "USD"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("return_code", 0) != 0:
+            raise ValueError(f"환율 조회 오류: {data.get('return_msg', data)}")
+        # 응답 필드명: 실제 API 응답 기준 (cur_prc 또는 tdy_bse_rt)
+        rate_str = (
+            data.get("tdy_bse_rt")
+            or data.get("cur_prc")
+            or data.get("bass_rt")
+            or "0"
+        )
+        rate = _parse_float(rate_str)
+        return rate if rate > 0 else None
+    except Exception as e:
+        print(f"  [kiwoom] USD/KRW 환율 수집 실패: {e}")
+        return None
+
+
 def get_stock_data(token: str, ticker: str, name: str, lookback_days: int = 5) -> dict | None:
     """종목 1개의 현재가·등락률·거래량 배율 수집 (ka10082 단일 호출).
 
