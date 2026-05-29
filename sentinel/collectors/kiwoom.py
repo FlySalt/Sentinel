@@ -206,6 +206,69 @@ def get_index_price(index_code: str) -> dict | None:
 
 # ── 외국인·기관 수급 ────────────────────────────────────────────────────────────
 
+def get_market_investor_trend(token: str, mrkt_tp: str = "001") -> dict[str, dict]:
+    """시장 전체 기관·외국인 연속매매 현황 조회 (ka10131).
+
+    URI: /api/dostk/frgnistt  (확인됨)
+    응답 키: orgn_frgnr_cont_trde_prst
+
+    netslmt_tp 구분 (확인됨):
+      "1" = 합산 순매도 상위 100종목
+      "2" = 합산 순매수 상위 100종목
+    → 두 번 호출 후 합산하면 총 200종목 커버 (관심종목 전부 포함 가능)
+
+    주요 응답 필드 (단위: 백만원):
+      stk_cd                  : 종목코드
+      stk_nm                  : 종목명
+      orgn_nettrde_amt        : 기관 오늘 순매매금액 (백만원, 양=순매수)
+      orgn_cont_netprps_dys   : 기관 연속 순매수 일수 (음수=연속 순매도)
+      frgnr_nettrde_amt       : 외국인 오늘 순매매금액 (백만원)
+      frgnr_cont_netprps_dys  : 외국인 연속 순매수 일수
+
+    mrkt_tp: "001"=코스피, "101"=코스닥
+    Returns: {stk_cd: row_dict} 매핑 — 실패 시 {} 반환
+    """
+    result: dict[str, dict] = {}
+
+    def _fetch(netslmt_tp: str) -> None:
+        try:
+            resp = requests.post(
+                f"{BASE_URL}/api/dostk/frgnistt",
+                headers={
+                    "content-type": "application/json;charset=utf-8",
+                    "authorization": f"Bearer {token}",
+                    "api-id": "ka10131",
+                },
+                json={
+                    "dt":          "1",
+                    "strt_dt":     "",
+                    "end_dt":      "",
+                    "mrkt_tp":     mrkt_tp,
+                    "netslmt_tp":  netslmt_tp,
+                    "stk_inds_tp": "0",
+                    "amt_qty_tp":  "0",   # 금액 기준
+                    "stex_tp":     "1",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("return_code", 0) != 0:
+                print(f"  [kiwoom] ka10131 오류(netslmt_tp={netslmt_tp}): "
+                      f"{data.get('return_msg', '')}")
+                return
+            for row in data.get("orgn_frgnr_cont_trde_prst", []):
+                code = row.get("stk_cd", "")
+                if code and code not in result:   # 중복 방지 (순매수 우선)
+                    result[code] = row
+        except Exception as e:
+            print(f"  [kiwoom] 시장 수급 조회 실패(netslmt_tp={netslmt_tp}): {e}")
+
+    _fetch("2")   # 순매수 상위 100 (먼저 — 중복 시 이쪽 우선)
+    _fetch("1")   # 순매도 상위 100 (추가)
+    return result
+
+
 def get_investor_trend(token: str, ticker: str, name: str, days: int = 20) -> list[dict]:
     """외국인·기관 일별 순매수 금액 조회.
 
