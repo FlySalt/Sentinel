@@ -3,7 +3,7 @@
 흐름:
   1. OpenDartReader로 관심 종목 최근 1시간 공시 수집
   2. 룰 기반 긴급/일반 분류
-  3. 긴급 공시만 Gemini 2.5 Flash로 3줄 요약 + 영향 분석
+  3. 전체 공시 Gemini 2.5 Flash로 3줄 요약 + 영향 분석 (AI는 모두)
   4. 긴급 공시 → 텔레그램 발송 / 전체 → Supabase 저장
 """
 
@@ -132,8 +132,10 @@ def _fetch_document_text(dart, rcp_no: str) -> str:
         doc = dart.document(rcp_no)       # HTML 문자열 반환
         if not doc:
             return ""
-        # BeautifulSoup으로 태그 제거
-        from bs4 import BeautifulSoup
+        # BeautifulSoup으로 태그 제거 (XML 경고 억제)
+        from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+        import warnings
+        warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
         soup = BeautifulSoup(doc, "html.parser")
         text = soup.get_text(separator="\n", strip=True)
         # 연속 빈줄 정리 후 앞 3000자만 사용
@@ -212,12 +214,13 @@ def main() -> None:
         tag = "🚨" if d["urgency"] == "긴급" else "  "
         print(f"  {tag} [{d['urgency']}] {d['company_name']} — {d['title']}")
 
-    # ── STEP 3: 긴급 공시 AI 분석 → 알림 → 저장 ─────────────────────────────
-    print(f"\n[3/3] 긴급 공시 처리 ({len(urgent)}건)...")
-    for d in urgent:
-        print(f"\n  {d['company_name']} ({d['ticker']}) — {d['title']}")
+    # ── STEP 3: 전체 공시 AI 분석 → 긴급만 텔레그램 → 전체 저장 ─────────────
+    print(f"\n[3/3] 전체 공시 AI 분석 ({len(disclosures)}건)...")
+    for d in disclosures:
+        tag = "🚨 긴급" if d["urgency"] == "긴급" else "   일반"
+        print(f"\n  [{tag}] {d['company_name']} ({d['ticker']}) — {d['title']}")
 
-        # AI 요약
+        # AI 요약 (긴급/일반 모두)
         try:
             summary, impact = generate_disclosure_summary(
                 os.environ["GOOGLE_API_KEY"], d
@@ -230,14 +233,15 @@ def main() -> None:
             d["impact"]     = "중립"
             print(f"  ✗ AI 요약 실패: {e}")
 
-        # 텔레그램
-        msg = format_disclosure_message(d)
-        ok = send_alert(
-            os.environ["TELEGRAM_BOT_TOKEN"],
-            os.environ["TELEGRAM_CHAT_ID"],
-            msg,
-        )
-        print(f"  텔레그램: {'✓ 발송 완료' if ok else '✗ 발송 실패'}")
+        # 텔레그램 — 긴급 공시만
+        if d["urgency"] == "긴급":
+            msg = format_disclosure_message(d)
+            ok = send_alert(
+                os.environ["TELEGRAM_BOT_TOKEN"],
+                os.environ["TELEGRAM_CHAT_ID"],
+                msg,
+            )
+            print(f"  텔레그램: {'✓ 발송 완료' if ok else '✗ 발송 실패'}")
 
     # ── 전체 공시 Supabase 저장 ───────────────────────────────────────────────
     print(f"\n  Supabase 저장 (전체 {len(disclosures)}건)...")
